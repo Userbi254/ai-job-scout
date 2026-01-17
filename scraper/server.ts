@@ -1,17 +1,30 @@
-res.json({
-    success: true,
-    message: 'Scraping Worker is running',
-    services: ['playwright', 'cheerio', 'deep-scrape'],
-    version: '2.0.0'
-});
+import express, { Request, Response } from 'express';
+import cors from 'cors';
+import { scrapeWithPlaywright } from './services/playwright.js';
+import { extractJobsWithCheerio, extractLinks, htmlToText } from './services/cheerio.js';
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// Middleware
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+
+// Health check
+app.get('/health', (req: Request, res: Response) => {
+    res.json({
+        success: true,
+        message: 'Scraping Worker is running',
+        services: ['playwright', 'cheerio'],
+        version: '2.0.0'
+    });
 });
 
 /**
  * POST /scrape
  * Scrapes a URL using Playwright (JavaScript execution)
- * Body: { url, options?: { waitUntil, timeout, waitForSelector } }
  */
-app.post('/scrape', async (req, res) => {
+app.post('/scrape', async (req: Request, res: Response) => {
     try {
         const { url, options = {} } = req.body;
 
@@ -24,81 +37,27 @@ app.post('/scrape', async (req, res) => {
         const result = await scrapeWithPlaywright(url, options);
 
         // Convert HTML to clean text
-        if (result.success && result.html) {
-            result.text = htmlToText(result.html);
-            result.text_length = result.text.length;
-        }
+        const text = htmlToText(result.html);
 
-        res.json(result);
-    } catch (error) {
+        res.json({
+            success: true,
+            html: result.html,
+            text: text,
+            text_length: text.length,
+            title: result.title,
+            links: result.links
+        });
+    } catch (error: any) {
         console.error('[API] /scrape error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
 
 /**
- * POST /deep-scrape
- * Deep scrape with tab expansion, collapsible expansion, pagination, and link following
- * Body: { url, depth?, maxPages?, expandTabs?, expandCollapsible?, handlePagination?, waitTime? }
- */
-app.post('/deep-scrape', async (req, res) => {
-    try {
-        const { url, ...options } = req.body;
-
-        if (!url) {
-            return res.status(400).json({ success: false, error: 'URL is required' });
-        }
-
-        console.log(`[API] /deep-scrape request for: ${url}`, options);
-
-        const result = await deepScrape(url, options);
-
-        // Convert HTML to clean text for each page
-        if (result.success && result.data) {
-            result.data = result.data.map(page => ({
-                ...page,
-                text: htmlToText(page.html),
-                html: page.html // Keep original HTML too
-            }));
-        }
-
-        res.json(result);
-    } catch (error) {
-        console.error('[API] /deep-scrape error:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-/**
- * POST /scrape-paginated
- * Scrapes multiple pages using Playwright pagination
- * Body: { url, nextSelector?, maxPages? }
- */
-app.post('/scrape-paginated', async (req, res) => {
-    try {
-        const { url, nextSelector = 'a.next', maxPages = 5 } = req.body;
-
-        if (!url) {
-            return res.status(400).json({ success: false, error: 'URL is required' });
-        }
-
-        console.log(`[API] /scrape-paginated request for: ${url} (max ${maxPages} pages)`);
-
-        const result = await scrapeWithPagination(url, nextSelector, maxPages);
-
-        res.json(result);
-    } catch (error) {
-        console.error('[API] /scrape-paginated error:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-/**
  * POST /parse
- * Parses HTML using Cheerio (BeautifulSoup-like)
- * Body: { html, pageUrl }
+ * Parses HTML using Cheerio
  */
-app.post('/parse', (req, res) => {
+app.post('/parse', (req: Request, res: Response) => {
     try {
         const { html, pageUrl = 'unknown' } = req.body;
 
@@ -114,37 +73,10 @@ app.post('/parse', (req, res) => {
             success: true,
             data: jobs,
             total: jobs.length,
-            provider: 'Cheerio (BeautifulSoup-like)'
-        });
-    } catch (error) {
-        console.error('[API] /parse error:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-/**
- * POST /extract-links
- * Extracts all links from HTML
- * Body: { html, baseUrl }
- */
-app.post('/extract-links', (req, res) => {
-    try {
-        const { html, baseUrl = '' } = req.body;
-
-        if (!html) {
-            return res.status(400).json({ success: false, error: 'HTML content is required' });
-        }
-
-        const links = extractLinks(html, baseUrl);
-
-        res.json({
-            success: true,
-            data: links,
-            total: links.length,
             provider: 'Cheerio'
         });
-    } catch (error) {
-        console.error('[API] /extract-links error:', error);
+    } catch (error: any) {
+        console.error('[API] /parse error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -152,9 +84,8 @@ app.post('/extract-links', (req, res) => {
 /**
  * POST /html-to-text
  * Converts HTML to plain text
- * Body: { html }
  */
-app.post('/html-to-text', (req, res) => {
+app.post('/html-to-text', (req: Request, res: Response) => {
     try {
         const { html } = req.body;
 
@@ -167,54 +98,10 @@ app.post('/html-to-text', (req, res) => {
         res.json({
             success: true,
             data: text,
-            length: text.length,
-            provider: 'Cheerio'
+            length: text.length
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error('[API] /html-to-text error:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-/**
- * POST /full-extract
- * Full pipeline: Scrape with Playwright → Parse with Cheerio
- * Body: { url, options? }
- */
-app.post('/full-extract', async (req, res) => {
-    try {
-        const { url, options = {} } = req.body;
-
-        if (!url) {
-            return res.status(400).json({ success: false, error: 'URL is required' });
-        }
-
-        console.log(`[API] /full-extract request for: ${url}`);
-
-        // Step 1: Scrape with Playwright
-        const scrapeResult = await scrapeWithPlaywright(url, options);
-
-        if (!scrapeResult.success) {
-            return res.json({
-                success: false,
-                error: scrapeResult.error,
-                provider: 'Playwright → Cheerio'
-            });
-        }
-
-        // Step 2: Parse with Cheerio
-        const jobs = extractJobsWithCheerio(scrapeResult.html, url);
-
-        res.json({
-            success: true,
-            data: jobs,
-            total: jobs.length,
-            pageTitle: scrapeResult.title,
-            linksFound: scrapeResult.links?.length || 0,
-            provider: 'Playwright → Cheerio'
-        });
-    } catch (error) {
-        console.error('[API] /full-extract error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -230,18 +117,8 @@ app.listen(PORT, () => {
 ║  Endpoints:                                               ║
 ║  • GET  /health          - Health check                   ║
 ║  • POST /scrape          - Playwright scraping            ║
-║  • POST /deep-scrape     - Deep scrape (tabs+pagination)  ║
-║  • POST /scrape-paginated - Pagination scraping           ║
 ║  • POST /parse           - Cheerio parsing                ║
-║  • POST /extract-links   - Link extraction                ║
 ║  • POST /html-to-text    - HTML to text                   ║
-║  • POST /full-extract    - Playwright + Cheerio           ║
-║                                                           ║
-║  Deep Scrape Features:                                    ║
-║  • Tab expansion & clicking                               ║
-║  • Collapsible element expansion                          ║
-║  • Pagination handling                                    ║
-║  • Link following (configurable depth)                    ║
 ╚═══════════════════════════════════════════════════════════╝
   `);
 });
