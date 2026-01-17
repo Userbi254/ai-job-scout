@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: ai-job-scraper
+    env: docker
+    plan: free
+    dockerContext: ./scraper
+    dockerfilePath: ./scraper/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 10000
