@@ -36,6 +36,7 @@ export function CVGenerator({ selectedJob, onGenerate }: CVGeneratorProps) {
   const [newSkill, setNewSkill] = useState('');
 
   const [hasOptimized, setHasOptimized] = useState<string | null>(null);
+  const [optimizationReport, setOptimizationReport] = useState<any[]>([]);
 
   // Load saved profile on mount or when selectedJob changes
   useEffect(() => {
@@ -171,6 +172,17 @@ export function CVGenerator({ selectedJob, onGenerate }: CVGeneratorProps) {
     try {
       const currentData = dataToUse || cvData;
 
+      // Use supabase.functions.invoke which automatically handles authentication
+      const jobDescLen = selectedJob.description?.length || 0;
+      toast.info(`DEBUG: Job: ${selectedJob.job_name}, DescLen: ${jobDescLen}`);
+
+      console.log('Sending to generate-cv:', {
+        jobTitle: selectedJob.job_name,
+        jobCompany: selectedJob.company,
+        jobDescLength: jobDescLen,
+        jobRequirements: selectedJob.requirements?.length || 0
+      });
+
       const { data, error } = await supabase.functions.invoke('generate-cv', {
         body: {
           userProfile: {
@@ -187,7 +199,19 @@ export function CVGenerator({ selectedJob, onGenerate }: CVGeneratorProps) {
         }
       });
 
-      if (error) throw error;
+      console.log('Received raw data:', data);
+      if (data?.raw_content) {
+        console.log('RAW AI CONTENT:', data.raw_content);
+      }
+      if (data?.data) {
+        console.log('Generated Summary:', data.data.summary);
+        console.log('Generated Experience Count:', data.data.experience?.length);
+        console.log('First Experience Desc:', data.data.experience?.[0]?.achievements?.[0] || data.data.experience?.[0]?.description);
+      }
+
+      if (error) {
+        throw new Error(`Function error: ${error.message}`);
+      }
 
       if (data.success && data.data) {
         const generated = data.data;
@@ -207,13 +231,18 @@ export function CVGenerator({ selectedJob, onGenerate }: CVGeneratorProps) {
             year: edu.year || ''
           })) : prev.education
         }));
+
+        if (generated.optimization_report && Array.isArray(generated.optimization_report)) {
+          setOptimizationReport(generated.optimization_report);
+        }
+
         toast.success("CV optimized for the job!");
       } else {
         toast.error(data.error || "Failed to optimize CV");
       }
     } catch (error) {
       console.error('Optimization error:', error);
-      toast.error("An error occurred while optimizing CV");
+      toast.error(`An error occurred while optimizing CV: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsGenerating(false);
     }
@@ -279,6 +308,29 @@ export function CVGenerator({ selectedJob, onGenerate }: CVGeneratorProps) {
           </div>
         </div>
       )}
+
+      {/* Optimization Report */}
+      {
+        optimizationReport.length > 0 && (
+          <div className="glass-panel p-6 border-l-4 border-blue-500">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-blue-500" />
+              Optimization Report
+            </h3>
+            <div className="space-y-4">
+              {optimizationReport.map((item, idx) => (
+                <div key={idx} className="bg-muted/30 p-3 rounded-lg">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-medium text-sm text-blue-600">{item.field}</span>
+                    <span className="text-xs text-muted-foreground">{item.change}</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{item.reason}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      }
 
       {/* Personal Information */}
       <div className="glass-panel p-6">
@@ -502,6 +554,6 @@ export function CVGenerator({ selectedJob, onGenerate }: CVGeneratorProps) {
           Save Profile
         </Button>
       </div>
-    </div>
+    </div >
   );
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from '@/lib/utils';
 
+// Local scraper URL
+const SCRAPER_URL = 'http://localhost:3001';
+
 interface CrawlResult {
   url: string;
   method: string;
@@ -19,6 +22,7 @@ interface CrawlResult {
   num_links: number;
   status: 'success' | 'failed';
   text?: string;
+  tool?: string;
 }
 
 export default function CrawlScrapePage() {
@@ -41,6 +45,24 @@ export default function CrawlScrapePage() {
   const [expandTabs, setExpandTabs] = useState(true);
   const [expandCollapsible, setExpandCollapsible] = useState(true);
   const [handlePagination, setHandlePagination] = useState(true);
+
+  // Refs for real-time access during crawling loop
+  const useDeepScrapeRef = useRef(useDeepScrape);
+  const depthRef = useRef(depth);
+  const maxPagesRef = useRef(maxPages);
+  const expandTabsRef = useRef(expandTabs);
+  const expandCollapsibleRef = useRef(expandCollapsible);
+  const handlePaginationRef = useRef(handlePagination);
+
+  // Sync refs with state
+  useEffect(() => {
+    useDeepScrapeRef.current = useDeepScrape;
+    depthRef.current = depth;
+    maxPagesRef.current = maxPages;
+    expandTabsRef.current = expandTabs;
+    expandCollapsibleRef.current = expandCollapsible;
+    handlePaginationRef.current = handlePagination;
+  }, [useDeepScrape, depth, maxPages, expandTabs, expandCollapsible, handlePagination]);
 
   // Download content as text file
   const handleDownload = (result: CrawlResult) => {
@@ -80,6 +102,8 @@ export default function CrawlScrapePage() {
         .from('workflow_runs')
         .select('*')
         .not('crawled_pages', 'is', null)
+        .or('is_trashed.is.null,is_trashed.eq.false')
+        .is('query', null) // Only show manual crawls (no search query)
         .order('started_at', { ascending: false })
         .limit(10);
 
@@ -106,7 +130,7 @@ export default function CrawlScrapePage() {
         currentIndex: 0
       });
 
-      // Auto-crawl all URLs
+      // Auto-crawl all URLs when forwarded from SearchPage
       if (!autoCrawlComplete) {
         toast.info(`Auto-crawling ${searchResults.length} URLs...`);
         crawlAllUrls(searchResults);
@@ -130,28 +154,97 @@ export default function CrawlScrapePage() {
       const urlData = urls[i];
       const targetUrl = urlData.url || urlData;
 
+      console.log(`[Scraper] Starting crawl ${i + 1}/${urls.length}: ${targetUrl}`);
       toast.loading(`Crawling ${i + 1}/${urls.length}: ${targetUrl.substring(0, 30)}...`);
 
       try {
-        const { data, error } = await supabase.functions.invoke('crawl-page', {
-          body: { url: targetUrl }
+        const currentUseDeepScrape = useDeepScrapeRef.current;
+        const endpoint = currentUseDeepScrape ? `${SCRAPER_URL}/deep-scrape` : `${SCRAPER_URL}/scrape`;
+        const body = currentUseDeepScrape ? {
+          url: targetUrl,
+          depth: depthRef.current,
+          maxPages: maxPagesRef.current,
+          expandTabs: expandTabsRef.current,
+          expandCollapsible: expandCollapsibleRef.current,
+          handlePagination: handlePaginationRef.current
+        } : { url: targetUrl };
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await response.json();
+        const error = !response.ok ? data.error : null;
+
+        console.log(`[Scraper] Response for ${targetUrl}:`, {
+          success: data.success,
+          provider: data.provider,
+          textLength: Array.isArray(data.data)
+            ? data.data.reduce((acc: number, p: any) => acc + (p.text?.length || 0), 0)
+            : (data.text?.length || data.data?.text?.length || 0),
+          linksCount: data.links?.length || 0,
+          error: error
         });
 
-        if (error) throw error;
+        if (error) throw new Error(error);
 
-        if (data.success && data.data.text && data.data.text.length > 0) {
-          crawlResults.push({
-            url: targetUrl,
-            method: data.data.provider || 'Firecrawl',
-            text_length: data.data.text.length,
-            num_links: data.data.links?.length || 0,
-            status: 'success',
-            text: data.data.text
-          });
+        if (data.success) {
+          if (Array.isArray(data.data)) {
+            // Handle Deep Scrape results (multiple pages)
+            data.data.forEach((page: any) => {
+              if (page.text && page.text.length > 0) {
+                crawlResults.push({
+                  url: page.url || targetUrl,
+                  method: currentUseDeepScrape ? 'Deep Scrape' : 'Standard',
+                  tool: data.provider || 'Playwright',
+                  text_length: page.text.length,
+                  num_links: 0,
+                  status: 'success',
+                  text: page.text
+                });
+              }
+            });
+            console.log(`[Scraper] ✅ SUCCESS: ${targetUrl} - ${data.data.length} pages via ${data.provider}`);
+          } else if (data.text && data.text.length > 0) {
+            // Handle Standard Scrape results
+            console.log(`[Scraper] ✅ SUCCESS: ${targetUrl} - ${data.text.length} chars via ${data.provider}`);
+            crawlResults.push({
+              url: targetUrl,
+              method: currentUseDeepScrape ? 'Deep Scrape' : 'Standard',
+              tool: data.provider || 'Playwright',
+              text_length: data.text.length,
+              num_links: data.links?.length || 0,
+              status: 'success',
+              text: data.text
+            });
+          } else if (data.data?.text && data.data.text.length > 0) {
+            // Handle Firecrawl/Other results wrapped in data object
+            console.log(`[Scraper] ✅ SUCCESS: ${targetUrl} - ${data.data.text.length} chars via ${data.provider}`);
+            crawlResults.push({
+              url: targetUrl,
+              method: currentUseDeepScrape ? 'Deep Scrape' : 'Standard',
+              tool: data.provider || 'Firecrawl',
+              text_length: data.data.text.length,
+              num_links: data.data.links?.length || 0,
+              status: 'success',
+              text: data.data.text
+            });
+          } else {
+            console.log(`[Scraper] ❌ FAILED: ${targetUrl} - no content`);
+            crawlResults.push({
+              url: targetUrl,
+              method: data.provider || 'Failed',
+              text_length: 0,
+              num_links: 0,
+              status: 'failed'
+            });
+          }
         } else {
+          console.log(`[Scraper] ❌ FAILED: ${targetUrl} - no content`);
           crawlResults.push({
             url: targetUrl,
-            method: data.data?.provider || 'Failed',
+            method: data.provider || 'Failed',
             text_length: 0,
             num_links: 0,
             status: 'failed'
@@ -203,8 +296,8 @@ export default function CrawlScrapePage() {
       const nextUrl = searchState.results[nextIndex].url;
       setSearchState({ ...searchState, currentIndex: nextIndex });
       setUrl(nextUrl);
-      // Auto-trigger crawl for the next result
-      setTimeout(() => handleCrawl(nextUrl), 100);
+      // Don't auto-trigger crawl - user should manually click Scrape button
+      // This prevents auto-crawl from interfering with manual URL entry
     } else {
       toast.info("No more results in the list");
     }
@@ -216,35 +309,49 @@ export default function CrawlScrapePage() {
       return;
     }
 
+    console.log(`[Scraper] 🚀 Starting crawl: ${crawlUrl}`);
+    console.log(`[Scraper] Mode: ${useDeepScrape ? 'Deep Scrape' : 'Standard Scrape'}`);
+
     setIsCrawling(true);
     try {
-      const requestBody: any = { url: crawlUrl };
+      // Use deep scrape or regular scrape endpoint
+      const endpoint = useDeepScrape ? `${SCRAPER_URL}/deep-scrape` : `${SCRAPER_URL}/scrape`;
+      console.log(`[Scraper] Endpoint: ${endpoint}`);
 
-      // Add deep scrape options if enabled
-      if (useDeepScrape) {
-        requestBody.useDeepScrape = true;
-        requestBody.deepScrapeOptions = {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(useDeepScrape ? {
+          url: crawlUrl,
           depth,
           maxPages,
           expandTabs,
           expandCollapsible,
           handlePagination
-        };
-        toast.info(`Deep scraping: depth=${depth}, maxPages=${maxPages}`);
-      }
+        } : { url: crawlUrl })
+      });
+      const data = await response.json();
+      const error = !response.ok ? data.error : null;
 
-      const { data, error } = await supabase.functions.invoke('crawl-page', {
-        body: requestBody
+      console.log(`[Scraper] Response:`, {
+        success: data.success,
+        provider: data.provider,
+        textLength: Array.isArray(data.data)
+          ? data.data.reduce((acc: number, p: any) => acc + (p.text?.length || 0), 0)
+          : (data.text?.length || data.data?.text?.length || 0),
+        linksCount: data.links?.length || 0,
+        error: error
       });
 
-      if (error) throw error;
+      if (error) throw new Error(error);
 
       if (data.success) {
         // Handle multiple pages from deep scrape
         if (Array.isArray(data.data)) {
           const newResults: CrawlResult[] = data.data.map((page: any) => ({
             url: page.url || crawlUrl,
-            method: data.provider || 'Deep Scrape',
+            method: useDeepScrape ? 'Deep Scrape' : 'Standard',
+            tool: data.provider || 'Playwright',
             text_length: page.text?.length || 0,
             num_links: 0,
             status: (page.text && page.text.length > 0) ? 'success' : 'failed',
@@ -263,7 +370,8 @@ export default function CrawlScrapePage() {
           const hasContent = data.data.text && data.data.text.length > 0;
           const newResult: CrawlResult = {
             url: data.data.url || crawlUrl,
-            method: data.provider || 'Firecrawl',
+            method: useDeepScrape ? 'Deep Scrape' : 'Standard',
+            tool: data.provider || 'Firecrawl',
             text_length: data.data.text?.length || 0,
             num_links: data.data.links?.length || 0,
             status: hasContent ? 'success' : 'failed',
@@ -500,13 +608,24 @@ export default function CrawlScrapePage() {
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-lg truncate max-w-[500px]">
+                      <a
+                        href={result.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-semibold text-lg truncate max-w-[500px] text-primary hover:underline cursor-pointer"
+                        title={result.url}
+                      >
                         {result.url}
-                      </h3>
+                      </a>
                       <Badge variant={result.status === 'success' ? 'default' : 'destructive'}>
                         {result.status}
                       </Badge>
-                      <Badge variant="outline">{result.method}</Badge>
+                      <Badge variant="secondary" className="text-xs">
+                        {result.method}
+                      </Badge>
+                      <Badge variant="secondary" className="text-xs">
+                        {result.tool || 'Unknown'}
+                      </Badge>
                     </div>
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
                       <div className="flex items-center gap-1">
@@ -639,22 +758,44 @@ export default function CrawlScrapePage() {
                       )}
                       <Button
                         variant="ghost"
-                        size="sm"
-                        onClick={async () => {
-                          try {
-                            const { error } = await supabase
-                              .from('workflow_runs')
-                              .delete()
-                              .eq('id', crawl.id);
+                        size="icon"
+                        className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => {
+                          const deleteItem = async () => {
+                            try {
+                              const { error } = await supabase
+                                .from('workflow_runs')
+                                .update({
+                                  is_trashed: true,
+                                  deleted_at: new Date().toISOString(),
+                                  deleted_from: 'crawl'
+                                })
+                                .eq('id', crawl.id);
 
-                            if (error) throw error;
+                              if (error) {
+                                // Ignore AbortError as it's usually from StrictMode
+                                if (error.message?.includes('AbortError') || error.code === 'PGRST116') {
+                                  console.log('Delete aborted (likely StrictMode), ignoring...');
+                                  return;
+                                }
+                                throw error;
+                              }
 
-                            toast.success("Crawl session deleted");
-                            fetchRecentCrawls();
-                          } catch (error) {
-                            console.error('Failed to delete:', error);
-                            toast.error("Failed to delete crawl session");
-                          }
+                              toast.success("Crawl session moved to trash");
+                              fetchRecentCrawls();
+                            } catch (err: unknown) {
+                              const error = err as { message?: string };
+                              // Check if it's an abort error and ignore it
+                              if (error?.message?.includes('AbortError') || error?.message?.includes('aborted')) {
+                                console.log('Delete request was aborted, refreshing list...');
+                                fetchRecentCrawls();
+                                return;
+                              }
+                              console.error('Failed to move to trash:', error);
+                              toast.error("Failed to move to trash");
+                            }
+                          };
+                          deleteItem();
                         }}
                       >
                         <X className="w-3 h-3" />

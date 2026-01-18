@@ -7,20 +7,19 @@ const corsHeaders = {
 
 // Gemini Model Pool for Rotation
 const GEMINI_MODELS = [
-  'gemini-2.0-flash-exp',
-  'gemini-1.5-flash',
-  'gemini-1.5-flash-8b',
+  'gemini-1.5-flash', // Prioritize stable model
   'gemini-1.5-pro',
   'gemini-1.0-pro',
-  'gemini-pro'
+  'gemini-2.0-flash-exp'
 ];
 
 let lastModelIndex = -1;
 
 async function callGeminiAPI(model: string, prompt: string, temperature = 0.7): Promise<string | null> {
-  const apiKey = Deno.env.get('GEMINI_API_KEY') || "AIzaSyDH_9mThDBEQOcJyHa1wNYQNdXvNNm51zM";
+  const apiKey = Deno.env.get('GEMINI_API_KEY') || "AIzaSyC74h6iYgCJiKmQzZvbksDhaX3497kqWsc";
 
   try {
+    console.log(`Calling ${model}...`);
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
       {
@@ -34,19 +33,22 @@ async function callGeminiAPI(model: string, prompt: string, temperature = 0.7): 
     );
 
     if (!response.ok) {
-      console.error(`${model} error: ${response.status}`);
-      return null;
+      const errorText = await response.text();
+      console.error(`${model} error: ${response.status} - ${errorText}`);
+      return `ERROR: ${response.status} - ${errorText}`;
     }
 
     const data = await response.json();
     return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
   } catch (error) {
     console.error(`${model} exception:`, error);
-    return null;
+    return `EXCEPTION: ${error.message}`;
   }
 }
 
 async function generateWithRetry(prompt: string, temperature = 0.7): Promise<string> {
+  let lastError = '';
+
   for (let attempt = 0; attempt < GEMINI_MODELS.length; attempt++) {
     lastModelIndex = (lastModelIndex + 1) % GEMINI_MODELS.length;
     const model = GEMINI_MODELS[lastModelIndex];
@@ -54,13 +56,15 @@ async function generateWithRetry(prompt: string, temperature = 0.7): Promise<str
     console.log(`Trying model: ${model}`);
     const result = await callGeminiAPI(model, prompt, temperature);
 
-    if (result) {
+    if (result && !result.startsWith('ERROR:') && !result.startsWith('EXCEPTION:')) {
       console.log(`Success with ${model}`);
       return result;
     }
+
+    if (result) lastError = result;
   }
 
-  return '{}';
+  throw new Error(`All Gemini models failed. Last error: ${lastError}`);
 }
 
 serve(async (req) => {
@@ -70,6 +74,11 @@ serve(async (req) => {
 
   try {
     const { userProfile, job, template } = await req.json();
+
+    console.log('Received Request:');
+    console.log('- User Profile Name:', userProfile?.full_name);
+    console.log('- Job Object:', JSON.stringify(job, null, 2));
+    console.log('- Template:', template?.name);
 
     if (!userProfile) {
       return new Response(
@@ -132,43 +141,60 @@ Generate a JSON object with these sections:
     "location": "Location",
     "linkedin": "LinkedIn URL",
     "portfolio": "Portfolio URL"
-  }
+  },
+  "optimization_report": [
+    {
+      "field": "Field Name",
+      "change": "Description of change",
+      "reason": "Reason for change"
+    }
+  ]
 }
 
 Make the content professional, action-oriented, and tailored to the target job if provided.
 
 CRITICAL FIELD PRESERVATION RULES:
 1. **PRESERVE ENTRY COUNTS**: Return EXACTLY ${userProfile.experience?.length || 0} experience entries (same number as input). Do NOT add or remove entries.
-2. **PRESERVE EDUCATION ENTRIES**: Include ALL existing education entries. You may ADD new relevant certifications/education AFTER existing ones, but NEVER remove or reduce the count.
+2. **PRESERVE ALL EXISTING EDUCATION**: The following education entries MUST be included EXACTLY as provided:
+   ${JSON.stringify(userProfile.education || [], null, 2)}
+   - Keep degree names, institution names, and years EXACTLY as shown
+   - DO NOT modify, remove, or reorder these existing entries
+   - You may ADD new courses/certifications with dates AFTER 2024 at the END of the education array
 3. **MODIFY ONLY THESE FIELDS**:
-   - Professional Summary (COMPLETELY REWRITE from scratch for job fit)
-   - Skills (REORDER and PRIORITIZE for job, add relevant ones)
-   - Experience descriptions/achievements (COMPLETELY REWRITE to show impact)
+   - Professional Summary (COMPLETELY REWRITE from scratch for THIS specific job)
+   - Skills (REORDER to prioritize job-relevant skills, add new relevant ones)
+   - Experience descriptions/achievements (COMPLETELY REWRITE to emphasize job-relevant impact)
 4. **DO NOT MODIFY**:
    - Contact information (name, email, phone, location, URLs)
    - Number of experience entries
-   - Core education degrees/institutions/years
+   - **EXISTING EDUCATION ENTRIES**: Keep Degree, Institution, and Year EXACTLY as provided. Do NOT change them.
    - Job titles or company names in experience
 
 CRITICAL CONTENT REWRITING RULES:
-1. **COMPLETE REWRITE**: Do NOT just tweak existing text. COMPLETELY REWRITE the professional summary, skills list, and ALL experience descriptions from scratch.
-2. **PROFESSIONAL SUMMARY**: Write a brand new 2-3 sentence summary that positions the candidate perfectly for the target job. Make it compelling and unique.
-3. **EXPERIENCE DESCRIPTIONS**: For EACH experience entry, write entirely NEW achievement-focused bullet points that:
-   - Show quantifiable impact and results
-   - Use strong action verbs (Led, Achieved, Implemented, Optimized, etc.)
-   - Highlight skills relevant to the target job
+1. **AGGRESSIVE REWRITE**: Do NOT just tweak existing text. FORGET the original phrasing. Write entirely NEW content from scratch that fits the target job.
+2. **PROFESSIONAL SUMMARY**: Write a brand new 2-3 sentence summary that positions the candidate perfectly for THIS specific target job. Make it compelling and unique. Tailor it to highlight relevant experience and skills for THIS role.
+3. **SKILLS**: Reorder skills to prioritize those matching the job requirements. Add relevant skills from the job description that the candidate can reasonably claim based on their experience. Remove generic or irrelevant skills.
+4. **EXPERIENCE DESCRIPTIONS**: For EACH experience entry, write entirely NEW achievement-focused bullet points that:
+   - Show quantifiable impact and results (infer reasonable metrics if needed based on the role)
+   - Use strong action verbs (Led, Achieved, Implemented, Optimized, Supervised, Developed, etc.)
+   - Highlight skills and responsibilities relevant to THIS target job
    - Demonstrate value delivered to the company
-4. **VARY SENTENCE STRUCTURE**: Do NOT start every bullet point with the same verb or structure. Use diverse action verbs and sentence patterns.
-5. **NO EM DASHES**: Avoid using em dashes (—) or excessive punctuation. Use clear, direct sentences.
-6. **NO TIMESTAMPS**: Do not add any timestamps, metadata, or extra fields not in the schema.
-7. **UNIQUE PHRASING**: Avoid generic phrases like "responsible for" or "worked on". Be specific and impactful.
-8. **ATS OPTIMIZED**: Naturally incorporate keywords from the job description throughout the content.
-9. **CHRONOLOGICAL CONSISTENCY**: If adding NEW education or certifications relevant to the target job, ensure their dates are AFTER the candidate's latest existing education. For example, if they graduated in 2024, new certs should be late 2024 or 2025.
+   - Are tailored to emphasize the most relevant aspects for THIS role
+5. **VARY SENTENCE STRUCTURE**: Do NOT start every bullet point with the same verb or structure. Use diverse action verbs and sentence patterns.
+6. **NO EM DASHES**: Avoid using em dashes (—) or excessive punctuation. Use clear, direct sentences.
+7. **NO TIMESTAMPS**: Do not add any timestamps, metadata, or extra fields not in the schema.
+8. **UNIQUE PHRASING**: Avoid generic phrases like "responsible for" or "worked on". Be specific and impactful.
+9. **ATS OPTIMIZED**: Naturally incorporate keywords from the job description throughout the content.
+10. **OPTIMIZATION REPORT**: You MUST include an "optimization_report" array in the JSON response. For each significant change (e.g., rewriting summary, adding a skill, rewriting an experience bullet), add an object: { "field": "Field Name", "change": "Brief description of change", "reason": "Why this improves fit for the target job" }.
+11. **NEW EDUCATION ONLY AFTER 2024**: If adding NEW courses or certifications relevant to the target job, ensure their dates are AFTER 2024 (the candidate's latest degree year). Place them at the END of the education array, AFTER the three existing entries.
 `;
 
     console.log('Generating CV for:', userProfile.full_name);
 
-    const content = await generateWithRetry(prompt, 0.7);
+    // Increased temperature to 0.8 for more creativity
+    const content = await generateWithRetry(prompt, 0.8);
+
+    console.log('RAW GEMINI RESPONSE:', content);
 
     // Parse JSON from response
     let cvContent: Record<string, unknown> = {};
@@ -195,7 +221,9 @@ CRITICAL CONTENT REWRITING RULES:
     return new Response(
       JSON.stringify({
         success: true,
-        data: cvContent
+        version: "1.1", // Verify deployment
+        data: cvContent,
+        raw_content: content // Return raw content for debugging
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

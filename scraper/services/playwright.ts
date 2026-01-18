@@ -1,5 +1,6 @@
 import { chromium } from 'playwright-extra';
 import stealthPlugin from 'puppeteer-extra-plugin-stealth';
+import { htmlToText } from './cheerio';
 
 chromium.use(stealthPlugin());
 
@@ -322,9 +323,16 @@ export async function deepScrape(url, options = {}) {
 
         console.log(`[Deep Scrape] Complete! Scraped ${allContent.length} pages from ${visitedUrls.size} URLs`);
 
+        // Convert HTML to Text
+        const processedData = allContent.map(page => {
+            const text = htmlToText(page.html);
+            console.log(`[Deep Scrape] Converted ${page.url} -> ${text.length} chars`);
+            return { ...page, text };
+        });
+
         return {
             success: true,
-            data: allContent,
+            data: processedData,
             totalPages: allContent.length,
             totalUrls: visitedUrls.size,
             provider: 'Playwright Deep Scrape'

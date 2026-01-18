@@ -39,7 +39,7 @@ export default function CVPage() {
         .select('extracted_jobs, sorted_jobs')
         .not('extracted_jobs', 'is', null)
         .order('started_at', { ascending: false })
-        .limit(10);
+        .limit(50);
 
       if (error) {
         console.error('Error fetching jobs:', error);

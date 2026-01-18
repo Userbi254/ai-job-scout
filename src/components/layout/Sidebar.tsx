@@ -10,7 +10,8 @@ import {
   Sun,
   Zap,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Trash2
 } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useSidebar } from '@/contexts/SidebarContext';
@@ -23,6 +24,7 @@ const navItems = [
   { path: '/extract', icon: FileText, label: 'Extract' },
   { path: '/sort', icon: ArrowUpDown, label: 'Sort' },
   { path: '/cv', icon: FileUser, label: 'CV Generator' },
+  { path: '/trash', icon: Trash2, label: 'Trash' },
 ];
 
 export function Sidebar() {

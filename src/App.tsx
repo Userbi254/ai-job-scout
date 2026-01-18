@@ -11,6 +11,7 @@ import CrawlScrapePage from "./pages/CrawlScrapePage";
 import ExtractPage from "./pages/ExtractPage";
 import SortPage from "./pages/SortPage";
 import CVPage from "./pages/CVPage";
+import TrashPage from "./pages/TrashPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -30,6 +31,7 @@ const App = () => (
               <Route path="/extract" element={<ExtractPage />} />
               <Route path="/sort" element={<SortPage />} />
               <Route path="/cv" element={<CVPage />} />
+              <Route path="/trash" element={<TrashPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

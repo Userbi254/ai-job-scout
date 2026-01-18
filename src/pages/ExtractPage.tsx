@@ -20,7 +20,8 @@ import {
     ChevronRight,
     Loader2,
     Play,
-    FileUser
+    FileUser,
+    X
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState, useEffect } from 'react';
@@ -28,6 +29,9 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Job } from '@/types/job';
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+
+// Local scraper URL
+const SCRAPER_URL = 'http://localhost:3001';
 
 export default function ExtractPage() {
     const location = useLocation();
@@ -51,6 +55,7 @@ export default function ExtractPage() {
                 .from('workflow_runs')
                 .select('*')
                 .not('extracted_jobs', 'is', null)
+                .or('is_trashed.is.null,is_trashed.eq.false')
                 .order('started_at', { ascending: false })
                 .limit(10);
 
@@ -87,22 +92,39 @@ export default function ExtractPage() {
 
         for (let i = 0; i < crawlResults.length; i++) {
             const result = crawlResults[i];
+            console.log(`[Extract] 🔍 Processing page ${i + 1}/${crawlResults.length}: ${result.url}`);
+            console.log(`[Extract] Content length: ${result.text?.length || 0} chars`);
             toast.loading(`Extracting from page ${i + 1}/${crawlResults.length}...`);
 
             try {
-                const { data, error } = await supabase.functions.invoke('extract-jobs', {
-                    body: {
+                const response = await fetch(`${SCRAPER_URL}/extract-jobs`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
                         pageContent: result.text,
                         pageUrl: result.url
-                    }
+                    })
+                });
+                const data = await response.json();
+                const error = !response.ok ? data.error : null;
+
+                console.log(`[Extract] Response from ${result.url}:`, {
+                    success: data.success,
+                    provider: data.provider,
+                    jobsFound: data.data?.length || 0,
+                    logs: data.logs,
+                    error: error
                 });
 
                 if (!error && data.success && data.data) {
+                    console.log(`[Extract] ✅ Found ${data.data.length} jobs via ${data.provider}`);
                     allJobs.push(...data.data);
                     if (data.provider) lastProvider = data.provider;
+                } else {
+                    console.log(`[Extract] ❌ No jobs found, error: ${error || 'none'}`);
                 }
             } catch (err) {
-                console.error(`Failed to extract from ${result.url}:`, err);
+                console.error(`[Extract] ❌ Failed to extract from ${result.url}:`, err);
             }
         }
 
@@ -141,12 +163,16 @@ export default function ExtractPage() {
 
         setIsExtracting(true);
         try {
-            const { data, error } = await supabase.functions.invoke('extract-jobs', {
-                body: {
+            const response = await fetch(`${SCRAPER_URL}/extract-jobs`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
                     pageContent: content,
                     pageUrl: pageUrl || 'manual-input'
-                }
+                })
             });
+            const data = await response.json();
+            const error = !response.ok ? data.error : null;
 
             if (error) throw error;
 
@@ -486,6 +512,46 @@ export default function ExtractPage() {
                                                     View Jobs
                                                 </Button>
                                             )}
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive"
+                                                onClick={() => {
+                                                    const deleteItem = async () => {
+                                                        try {
+                                                            const { error } = await supabase
+                                                                .from('workflow_runs')
+                                                                .update({
+                                                                    is_trashed: true,
+                                                                    deleted_at: new Date().toISOString(),
+                                                                    deleted_from: 'extract'
+                                                                })
+                                                                .eq('id', extraction.id);
+
+                                                            if (error) {
+                                                                if (error.message?.includes('AbortError') || error.code === 'PGRST116') {
+                                                                    return;
+                                                                }
+                                                                throw error;
+                                                            }
+
+                                                            toast.success("Extraction history moved to trash");
+                                                            fetchRecentExtractions();
+                                                        } catch (err: unknown) {
+                                                            const error = err as { message?: string };
+                                                            if (error?.message?.includes('AbortError') || error?.message?.includes('aborted')) {
+                                                                fetchRecentExtractions();
+                                                                return;
+                                                            }
+                                                            console.error('Failed to move to trash:', error);
+                                                            toast.error("Failed to move to trash");
+                                                        }
+                                                    };
+                                                    deleteItem();
+                                                }}
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </Button>
                                         </div>
                                     </div>
 

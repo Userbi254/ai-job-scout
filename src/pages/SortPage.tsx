@@ -14,8 +14,11 @@ import {
   Info,
   Loader2,
   ChevronRight,
-  Eye
+  Eye,
+  X
 } from 'lucide-react';
+
+
 import { cn } from '@/lib/utils';
 import {
   Tooltip,
@@ -46,8 +49,10 @@ export default function SortPage() {
       setJobs(passedJobs);
       setIsLoading(false);
 
-      // Save sorted jobs to database
-      saveSortedJobs(passedJobs);
+      // Save sorted jobs to database only if we have jobs
+      if (passedJobs.length > 0) {
+        saveSortedJobs(passedJobs);
+      }
     } else {
       // Fallback: fetch from database
       fetchTopJobs();
@@ -77,6 +82,7 @@ export default function SortPage() {
         .from('workflow_runs')
         .select('*')
         .not('sorted_jobs', 'is', null)
+        .or('is_trashed.is.null,is_trashed.eq.false')
         .order('started_at', { ascending: false })
         .limit(10);
 
@@ -216,9 +222,9 @@ export default function SortPage() {
                     {/* Rank */}
                     <div className={cn(
                       "w-10 h-10 rounded-lg flex items-center justify-center font-bold shrink-0",
-                      index === 0 ? "bg-yellow-500/20 text-yellow-500" :
-                        index === 1 ? "bg-gray-400/20 text-gray-400" :
-                          index === 2 ? "bg-orange-600/20 text-orange-600" :
+                      index === 0 ? "bg-primary/20 text-primary-foreground" :
+                        index === 1 ? "bg-accent text-accent-foreground" :
+                          index === 2 ? "bg-secondary text-secondary-foreground" :
                             "bg-muted text-muted-foreground"
                     )}>
                       #{index + 1}
@@ -404,6 +410,49 @@ export default function SortPage() {
                           View Jobs
                         </Button>
                       )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => {
+                          const deleteItem = async () => {
+                            try {
+                              const { error } = await supabase
+                                .from('workflow_runs')
+                                .update({
+                                  is_trashed: true,
+                                  deleted_at: new Date().toISOString(),
+                                  deleted_from: 'sort'
+                                })
+                                .eq('id', sort.id);
+
+                              console.log('[Sort Delete] Updated item:', sort.id, 'error:', error);
+
+                              if (error) {
+                                // Ignore AbortError as it's usually from StrictMode
+                                if (error.message?.includes('AbortError') || error.code === 'PGRST116') {
+                                  return;
+                                }
+                                throw error;
+                              }
+
+                              toast.success("Sort history moved to trash");
+                              fetchRecentSorts();
+                            } catch (err: unknown) {
+                              const error = err as { message?: string };
+                              if (error?.message?.includes('AbortError') || error?.message?.includes('aborted')) {
+                                fetchRecentSorts();
+                                return;
+                              }
+                              console.error('Failed to move to trash:', error);
+                              toast.error("Failed to move to trash");
+                            }
+                          };
+                          deleteItem();
+                        }}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
                     </div>
                   </div>
                 </div>

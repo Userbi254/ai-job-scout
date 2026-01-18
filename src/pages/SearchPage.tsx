@@ -4,7 +4,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Search, MapPin, Briefcase, Globe, Clock, ArrowRight, Loader2, ExternalLink, CheckCircle, XCircle, ChevronRight, RefreshCw } from 'lucide-react';
+import { Search, MapPin, Briefcase, Globe, Clock, ArrowRight, Loader2, ExternalLink, CheckCircle, X, ChevronRight, RefreshCw, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -65,6 +65,7 @@ export default function SearchPage() {
         .from('workflow_runs')
         .select('*')
         .not('search_results', 'is', null)
+        .or('is_trashed.is.null,is_trashed.eq.false')
         .order('started_at', { ascending: false })
         .limit(10);
 
@@ -353,12 +354,53 @@ export default function SearchPage() {
                         size="sm"
                         variant="ghost"
                         onClick={() => {
-                          setQuery(search.query);
+                          setQuery(search.query || '');
                           setResults(search.search_results || []);
                           setShowResults(true);
                         }}
                       >
                         <RefreshCw className="w-3 h-3" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => {
+                          const deleteItem = async () => {
+                            try {
+                              const { error } = await supabase
+                                .from('workflow_runs')
+                                .update({
+                                  is_trashed: true,
+                                  deleted_at: new Date().toISOString(),
+                                  deleted_from: 'search'
+                                })
+                                .eq('id', search.id);
+
+                              if (error) {
+                                if (error.message?.includes('AbortError') || error.code === 'PGRST116') {
+                                  return;
+                                }
+                                throw error;
+                              }
+
+                              toast.success("Search history moved to trash");
+                              fetchRecentSearches();
+                            } catch (err: unknown) {
+                              const error = err as { message?: string };
+                              if (error?.message?.includes('AbortError') || error?.message?.includes('aborted')) {
+                                fetchRecentSearches();
+                                return;
+                              }
+                              console.error('Failed to move to trash:', error);
+                              toast.error("Failed to move to trash");
+                            }
+                          };
+                          deleteItem();
+                        }}
+                      >
+                        <X className="w-4 h-4" />
                       </Button>
                     </div>
                   </div>
