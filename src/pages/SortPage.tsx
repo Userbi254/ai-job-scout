@@ -65,11 +65,11 @@ export default function SortPage() {
     if (sortedJobs.length === 0) return;
 
     try {
-      await supabase.from('workflow_runs').insert([{
+      await (supabase.from('workflow_runs') as any).insert({
         status: 'completed',
         started_at: new Date().toISOString(),
-        sorted_jobs: sortedJobs as unknown as Record<string, unknown>[]
-      }]);
+        sorted_jobs: sortedJobs
+      });
       fetchRecentSorts();
     } catch (err) {
       console.error('Failed to save sorted jobs:', err);
