@@ -85,18 +85,18 @@ serve(async (req) => {
         }));
 
         // Sort based on criteria
-        let sortedJobs;
+        let sortedJobs: Record<string, unknown>[];
         if (sortBy === 'relevance') {
             sortedJobs = jobsWithScores.sort((a, b) =>
                 (b.relevance_score as number) - (a.relevance_score as number)
             );
         } else if (sortBy === 'company') {
             sortedJobs = jobsWithScores.sort((a, b) =>
-                ((a.company as string) || '').localeCompare((b.company as string) || '')
+                ((a['company'] as string) || '').localeCompare((b['company'] as string) || '')
             );
         } else if (sortBy === 'title') {
             sortedJobs = jobsWithScores.sort((a, b) =>
-                ((a.job_name as string) || '').localeCompare((b.job_name as string) || '')
+                ((a['job_name'] as string) || '').localeCompare((b['job_name'] as string) || '')
             );
         } else {
             sortedJobs = jobsWithScores;

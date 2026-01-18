@@ -150,7 +150,7 @@ export default function Dashboard() {
 
       await supabase.from('workflow_runs').update({
         status: 'completed',
-        extracted_jobs: sortedJobs,
+        extracted_jobs: sortedJobs as unknown as Record<string, unknown>[],
         completed_at: new Date().toISOString()
       }).eq('id', runData.id);
 
