@@ -2,6 +2,8 @@ export interface Job {
   id: string;
   job_name: string;
   company: string | null;
+  description?: string | null;
+  location?: string | null;
   employment_details: string[];
   payment_method: string | null;
   amount: string | null;
@@ -13,6 +15,7 @@ export interface Job {
   site_url: string;
   relevance_score?: number;
   scraped_at?: string;
+  [key: string]: unknown; // Allow indexing for Json compatibility
 }
 
 export interface SearchResult {

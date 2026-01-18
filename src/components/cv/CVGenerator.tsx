@@ -173,7 +173,8 @@ export function CVGenerator({ selectedJob, onGenerate }: CVGeneratorProps) {
       const currentData = dataToUse || cvData;
 
       // Use supabase.functions.invoke which automatically handles authentication
-      const jobDescLen = selectedJob.description?.length || 0;
+      const jobDesc = (selectedJob as Job & { description?: string }).description;
+      const jobDescLen = jobDesc?.length || 0;
       toast.info(`DEBUG: Job: ${selectedJob.job_name}, DescLen: ${jobDescLen}`);
 
       console.log('Sending to generate-cv:', {
@@ -282,13 +283,13 @@ export function CVGenerator({ selectedJob, onGenerate }: CVGeneratorProps) {
               <Badge variant="secondary" className="text-success border-success/30">
                 {selectedJob.relevance_score}% Match
               </Badge>
-              <Button
-                size="sm"
-                variant="default"
-                onClick={optimizeCV}
-                disabled={isGenerating}
-                className="gap-2"
-              >
+            <Button
+                  size="sm"
+                  variant="default"
+                  onClick={() => optimizeCV()}
+                  disabled={isGenerating}
+                  className="gap-2"
+                >
                 {isGenerating ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (

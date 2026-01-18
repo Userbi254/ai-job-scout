@@ -362,7 +362,6 @@ export default function SearchPage() {
                         <RefreshCw className="w-3 h-3" />
                       </Button>
                       <Button
-                        size="sm"
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive"

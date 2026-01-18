@@ -42,7 +42,7 @@ async function callGeminiAPI(model: string, prompt: string, temperature = 0.7): 
     return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
   } catch (error) {
     console.error(`${model} exception:`, error);
-    return `EXCEPTION: ${error.message}`;
+    return `EXCEPTION: ${error instanceof Error ? error.message : 'Unknown error'}`;
   }
 }
 
