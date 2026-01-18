@@ -207,9 +207,12 @@ export type Database = {
         Row: {
           completed_at: string | null
           crawled_pages: Json | null
+          deleted_at: string | null
+          deleted_from: string | null
           error_message: string | null
           extracted_jobs: Json | null
           id: string
+          is_trashed: boolean | null
           location: string | null
           query: string | null
           search_results: Json | null
@@ -221,9 +224,12 @@ export type Database = {
         Insert: {
           completed_at?: string | null
           crawled_pages?: Json | null
+          deleted_at?: string | null
+          deleted_from?: string | null
           error_message?: string | null
           extracted_jobs?: Json | null
           id?: string
+          is_trashed?: boolean | null
           location?: string | null
           query?: string | null
           search_results?: Json | null
@@ -235,9 +241,12 @@ export type Database = {
         Update: {
           completed_at?: string | null
           crawled_pages?: Json | null
+          deleted_at?: string | null
+          deleted_from?: string | null
           error_message?: string | null
           extracted_jobs?: Json | null
           id?: string
+          is_trashed?: boolean | null
           location?: string | null
           query?: string | null
           search_results?: Json | null

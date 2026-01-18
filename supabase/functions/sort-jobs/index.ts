@@ -79,7 +79,7 @@ serve(async (req) => {
         console.log(`Sorting ${jobs.length} jobs by ${sortBy}...`);
 
         // Calculate relevance score for each job
-        const jobsWithScores = jobs.map((job: Record<string, unknown>) => ({
+        const jobsWithScores: Record<string, unknown>[] = jobs.map((job: Record<string, unknown>) => ({
             ...job,
             relevance_score: calculateRelevanceScore(job)
         }));
@@ -92,11 +92,11 @@ serve(async (req) => {
             );
         } else if (sortBy === 'company') {
             sortedJobs = jobsWithScores.sort((a, b) =>
-                ((a['company'] as string) || '').localeCompare((b['company'] as string) || '')
+                ((a.company as string) || '').localeCompare((b.company as string) || '')
             );
         } else if (sortBy === 'title') {
             sortedJobs = jobsWithScores.sort((a, b) =>
-                ((a['job_name'] as string) || '').localeCompare((b['job_name'] as string) || '')
+                ((a.job_name as string) || '').localeCompare((b.job_name as string) || '')
             );
         } else {
             sortedJobs = jobsWithScores;

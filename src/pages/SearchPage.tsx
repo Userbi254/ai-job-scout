@@ -104,7 +104,7 @@ export default function SearchPage() {
         if (mappedResults.length > 0) {
           try {
             const { data: userData } = await supabase.auth.getUser();
-            await supabase.from('workflow_runs').insert({
+            await (supabase.from('workflow_runs') as any).insert({
               user_id: userData.user?.id,
               query: query,
               status: 'searching',
@@ -134,7 +134,7 @@ export default function SearchPage() {
       // Persist mock results too for demonstration
       try {
         const { data: userData } = await supabase.auth.getUser();
-        await supabase.from('workflow_runs').insert({
+        await (supabase.from('workflow_runs') as any).insert({
           user_id: userData.user?.id,
           query: query,
           status: 'searching',
