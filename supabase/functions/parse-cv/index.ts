@@ -1,68 +1,54 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
-// Complete CORS headers including methods
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-// Gemini Model Pool for Rotation
-const GEMINI_MODELS = [
-  'gemini-2.0-flash-exp',
-  'gemini-1.5-flash',
-  'gemini-1.5-flash-8b',
-  'gemini-1.5-pro',
-  'gemini-1.0-pro',
-  'gemini-pro'
-];
+async function callOpenRouter(prompt: string): Promise<string | null> {
+  const apiKey = Deno.env.get('CV_OPENROUTER_API_KEY');
 
-let lastModelIndex = -1;
-
-async function callGeminiAPI(model: string, prompt: string): Promise<string | null> {
-  const apiKey = Deno.env.get('GEMINI_API_KEY') || "AIzaSyDH_9mThDBEQOcJyHa1wNYQNdXvNNm51zM";
+  if (!apiKey) {
+    console.error('CV_OPENROUTER_API_KEY not configured');
+    return null;
+  }
 
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.1 }
-        })
-      }
-    );
+    console.log('Calling OpenRouter API...');
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://lovable.dev',
+        'X-Title': 'CV Parser'
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.0-flash-001',
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.1
+      })
+    });
 
     if (!response.ok) {
-      console.error(`${model} error: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`OpenRouter error: ${response.status} - ${errorText}`);
       return null;
     }
 
     const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+    console.log('OpenRouter response received');
+    return data.choices?.[0]?.message?.content || null;
   } catch (error) {
-    console.error(`${model} exception:`, error);
+    console.error('OpenRouter exception:', error);
     return null;
   }
-}
-
-async function parseWithRetry(prompt: string): Promise<string> {
-  for (let attempt = 0; attempt < GEMINI_MODELS.length; attempt++) {
-    lastModelIndex = (lastModelIndex + 1) % GEMINI_MODELS.length;
-    const model = GEMINI_MODELS[lastModelIndex];
-
-    console.log(`Trying model: ${model}`);
-    const result = await callGeminiAPI(model, prompt);
-
-    if (result) {
-      console.log(`Success with ${model}`);
-      return result;
-    }
-  }
-
-  return '{}';
 }
 
 serve(async (req) => {
@@ -140,10 +126,10 @@ CRITICAL EXTRACTION RULES:
 
     console.log('Parsing CV text of length:', cvText.length);
 
-    const content = await parseWithRetry(prompt);
+    const content = await callOpenRouter(prompt);
 
     if (!content) {
-      console.error('Empty response from AI');
+      console.error('Empty response from OpenRouter');
       return new Response(
         JSON.stringify({ success: false, error: 'AI returned empty response' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
