@@ -8,12 +8,14 @@ const corsHeaders = {
 
 async function callOpenRouter(prompt: string): Promise<string | null> {
   const apiKey = Deno.env.get('CV_OPENROUTER_API_KEY');
+  
+  console.log('API Key present:', !!apiKey);
+  console.log('API Key length:', apiKey?.length || 0);
 
   if (!apiKey) {
     console.error('CV_OPENROUTER_API_KEY not configured');
     return null;
   }
-
   try {
     console.log('Calling OpenRouter API...');
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
