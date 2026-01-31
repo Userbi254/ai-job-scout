@@ -60,7 +60,11 @@ export default function ExtractPage() {
                 .limit(10);
 
             if (data) {
-                setRecentExtractions(data);
+                // Filter out records with empty arrays
+                const validExtractions = data.filter(run => 
+                    Array.isArray(run.extracted_jobs) && run.extracted_jobs.length > 0
+                );
+                setRecentExtractions(validExtractions);
             }
         } catch (error) {
             console.error('Failed to fetch recent extractions:', error);
@@ -138,13 +142,17 @@ export default function ExtractPage() {
         setIsExtracting(false);
         setAutoExtractComplete(true);
 
-        // Save extracted jobs to database
+        // Save extracted jobs to database only if we have actual jobs
         if (jobsWithIds.length > 0) {
             try {
-                await supabase.from('workflow_runs').insert({
+                await (supabase.from('workflow_runs') as any).insert({
                     status: 'completed',
                     started_at: new Date().toISOString(),
-                    extracted_jobs: jobsWithIds
+                    extracted_jobs: jobsWithIds,
+                    // Set other arrays to null to prevent empty array records
+                    search_results: null,
+                    crawled_pages: null,
+                    sorted_jobs: null
                 });
                 fetchRecentExtractions(); // Refresh the list
             } catch (err) {

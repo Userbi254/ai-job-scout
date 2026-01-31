@@ -70,7 +70,11 @@ export default function SearchPage() {
         .limit(10);
 
       if (data) {
-        setRecentSearches(data);
+        // Filter out records with empty arrays
+        const validSearches = data.filter(run => 
+          Array.isArray(run.search_results) && run.search_results.length > 0
+        );
+        setRecentSearches(validSearches);
       }
     } catch (error) {
       console.error('Failed to fetch recent searches:', error);
@@ -108,9 +112,14 @@ export default function SearchPage() {
               user_id: userData.user?.id,
               query: query,
               status: 'searching',
-              search_results: mappedResults
+              search_results: mappedResults,
+              // Explicitly set other arrays to null to avoid empty [] records
+              crawled_pages: null,
+              extracted_jobs: null,
+              sorted_jobs: null
             });
             console.log("Search results persisted to database");
+            fetchRecentSearches();
           } catch (dbError) {
             console.warn("Failed to persist search results:", dbError);
           }
@@ -138,8 +147,12 @@ export default function SearchPage() {
           user_id: userData.user?.id,
           query: query,
           status: 'searching',
-          search_results: mockResults
+          search_results: mockResults,
+          crawled_pages: null,
+          extracted_jobs: null,
+          sorted_jobs: null
         });
+        fetchRecentSearches();
       } catch (e) { }
     } finally {
       setIsSearching(false);

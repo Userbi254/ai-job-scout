@@ -102,17 +102,18 @@ export default function TrashPage() {
     };
 
     const getItemType = (item: any) => {
-        // Determine type based on where it was deleted from
-        if (item.error_message === 'TRASHED_FROM_SEARCH') return 'Search';
-        if (item.error_message === 'TRASHED_FROM_CRAWL') return 'Crawl Session';
-        if (item.error_message === 'TRASHED_FROM_EXTRACT') return 'Extraction';
-        if (item.error_message === 'TRASHED_FROM_SORT') return 'Sort Session';
+        // Use deleted_from field first if available
+        if (item.deleted_from === 'search') return 'Search';
+        if (item.deleted_from === 'crawl') return 'Crawl Session';
+        if (item.deleted_from === 'extract') return 'Extraction';
+        if (item.deleted_from === 'sort') return 'Sort Session';
 
-        // Fallback to field presence for legacy TRASHED items
-        if (item.sorted_jobs) return 'Sort Session';
-        if (item.extracted_jobs) return 'Extraction';
-        if (item.crawled_pages) return 'Crawl Session';
-        if (item.search_results) return 'Search';
+        // Fallback to field presence for legacy items
+        if (Array.isArray(item.sorted_jobs) && item.sorted_jobs.length > 0) return 'Sort Session';
+        if (Array.isArray(item.extracted_jobs) && item.extracted_jobs.length > 0) return 'Extraction';
+        if (Array.isArray(item.crawled_pages) && item.crawled_pages.length > 0) return 'Crawl Session';
+        if (Array.isArray(item.search_results) && item.search_results.length > 0) return 'Search';
+        
         return 'Unknown Item';
     };
 

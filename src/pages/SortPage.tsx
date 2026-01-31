@@ -68,7 +68,11 @@ export default function SortPage() {
       await (supabase.from('workflow_runs') as any).insert({
         status: 'completed',
         started_at: new Date().toISOString(),
-        sorted_jobs: sortedJobs
+        sorted_jobs: sortedJobs,
+        // Set other arrays to null to prevent empty array records
+        search_results: null,
+        crawled_pages: null,
+        extracted_jobs: null
       });
       fetchRecentSorts();
     } catch (err) {
@@ -87,7 +91,11 @@ export default function SortPage() {
         .limit(10);
 
       if (data) {
-        setRecentSorts(data);
+        // Filter out records with empty arrays
+        const validSorts = data.filter(run => 
+          Array.isArray(run.sorted_jobs) && run.sorted_jobs.length > 0
+        );
+        setRecentSorts(validSorts);
       }
     } catch (error) {
       console.error('Failed to fetch recent sorts:', error);

@@ -108,7 +108,11 @@ export default function CrawlScrapePage() {
         .limit(10);
 
       if (data) {
-        setRecentCrawls(data);
+        // Filter out records with empty arrays
+        const validCrawls = data.filter(run => 
+          Array.isArray(run.crawled_pages) && run.crawled_pages.length > 0
+        );
+        setRecentCrawls(validCrawls);
       }
     } catch (error) {
       console.error('Failed to fetch recent crawls:', error);
@@ -266,11 +270,11 @@ export default function CrawlScrapePage() {
     setIsCrawling(false);
     setAutoCrawlComplete(true);
 
-    // Save crawl results to database
+    // Save crawl results to database only if we have valid results
     const successfulResults = crawlResults.filter(r => r.status === 'success' && r.text && r.text.trim().length > 0);
     if (successfulResults.length > 0) {
       try {
-        await supabase.from('workflow_runs').insert({
+        await (supabase.from('workflow_runs') as any).insert({
           status: 'completed',
           started_at: new Date().toISOString(),
           crawled_pages: successfulResults.map(r => ({
@@ -279,7 +283,11 @@ export default function CrawlScrapePage() {
             text_length: r.text_length,
             num_links: r.num_links,
             text: r.text
-          }))
+          })),
+          // Set other arrays to null to prevent empty array records
+          search_results: null,
+          extracted_jobs: null,
+          sorted_jobs: null
         });
         fetchRecentCrawls(); // Refresh the list
       } catch (err) {
